@@ -499,13 +499,14 @@ int main() {
 
                 const checkbox = document.createElement('input');
                 checkbox.type = 'checkbox';
-                checkbox.id = `shadow-${index}`;
+                checkbox.id = `color-toggle-${index}`;
                 checkbox.dataset.color = JSON.stringify(color);
+                checkbox.checked = true; // Render all colors by default
                 checkbox.addEventListener('change', () => processImage());
 
                 const label = document.createElement('label');
-                label.htmlFor = `shadow-${index}`;
-                label.textContent = `Shadow for rgb(${r}, ${g}, ${b})`;
+                label.htmlFor = `color-toggle-${index}`;
+                label.textContent = `Render rgb(${r}, ${g}, ${b})`;
 
                 item.appendChild(colorBox);
                 item.appendChild(checkbox);
@@ -599,9 +600,9 @@ int main() {
                 previewImage.style.height = '100%';
                 previewImage.style.objectFit = 'contain';
 
-                const shadowColors = [];
+                const renderedColors = [];
                 paletteContainer.querySelectorAll('input[type="checkbox"]:checked').forEach(cb => {
-                    shadowColors.push(JSON.parse(cb.dataset.color));
+                    renderedColors.push(JSON.parse(cb.dataset.color));
                 });
 
                 let asciiGrid = Array(targetHeight).fill(null).map(() => Array(targetWidth).fill(' '));
@@ -613,28 +614,16 @@ int main() {
                         const alpha = quantizedData[index + 3];
 
                         if (alpha > 128) {
-                            if (useOnce) {
-                                asciiGrid[y][x] = charIndex < characters.length ? characters[charIndex] : ' ';
-                            } else {
-                                asciiGrid[y][x] = characters[charIndex % characters.length];
-                            }
-                            charIndex++;
-
                             const pixelColor = { r: quantizedData[index], g: quantizedData[index + 1], b: quantizedData[index + 2] };
-                            const shouldShadow = shadowColors.some(sc => sc.r === pixelColor.r && sc.g === pixelColor.g && sc.b === pixelColor.b);
+                            const shouldRender = renderedColors.some(sc => sc.r === pixelColor.r && sc.g === pixelColor.g && sc.b === pixelColor.b);
 
-                            if (shouldShadow && y + 1 < targetHeight && x + 1 < targetWidth) {
-                                const neighborIndex = ((y + 1) * targetWidth + (x + 1)) * 4;
-                                const neighborAlpha = quantizedData[neighborIndex + 3];
-                                if (neighborAlpha < 128) {
-                                    asciiGrid[y + 1][x + 1] = ' ';
+                            if (shouldRender) {
+                                if (useOnce) {
+                                    asciiGrid[y][x] = charIndex < characters.length ? characters[charIndex] : ' ';
                                 } else {
-                                    const neighborColor = { r: quantizedData[neighborIndex], g: quantizedData[neighborIndex + 1], b: quantizedData[neighborIndex + 2] };
-                                    const isNeighborShadowed = shadowColors.some(sc => sc.r === neighborColor.r && sc.g === neighborColor.g && sc.b === neighborColor.b);
-                                    if (!isNeighborShadowed) {
-                                        asciiGrid[y + 1][x + 1] = ' ';
-                                    }
+                                    asciiGrid[y][x] = characters[charIndex % characters.length];
                                 }
+                                charIndex++;
                             }
                         }
                     }
