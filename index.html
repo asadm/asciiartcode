@@ -1,0 +1,435 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>PNG to ASCII Art Generator</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.11.1/styles/atom-one-dark.min.css" id="hljs-theme">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Fira+Code&display=swap" rel="stylesheet" id="font-link">
+    <style>
+        body {
+            font-family: 'Fira Code', monospace;
+            background-color: #1e1e1e;
+            color: #d4d4d4;
+            margin: 0;
+            display: flex;
+            flex-direction: column;
+            height: 100vh;
+        }
+
+        .container {
+            display: flex;
+            flex: 1;
+            overflow: hidden;
+        }
+
+        .controls {
+            flex: 0 0 350px;
+            padding: 20px;
+            border-right: 1px solid #333;
+            display: flex;
+            flex-direction: column;
+            gap: 20px;
+            overflow-y: auto;
+        }
+
+        .output-container {
+            display: flex;
+            flex: 1;
+            gap: 10px;
+        }
+
+        .output, .image-preview {
+            flex: 1;
+            padding: 10px;
+            overflow: auto;
+            background-color: #282c34;
+            border-radius: 4px;
+        }
+
+        .image-preview {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        #previewImage {
+            max-width: 100%;
+            max-height: 100%;
+            object-fit: contain;
+        }
+        
+        h1, h2 {
+            margin-top: 0;
+            color: #cccccc;
+            font-weight: 300;
+        }
+
+        .control-group {
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+        }
+
+        label {
+            font-weight: bold;
+            color: #9cdcfe;
+        }
+
+        input[type="number"], textarea {
+            width: 100%;
+            box-sizing: border-box;
+            background-color: #3c3c3c;
+            color: #d4d4d4;
+            border: 1px solid #555;
+            padding: 8px;
+            border-radius: 4px;
+            font-family: inherit;
+        }
+        
+        textarea {
+            resize: vertical;
+            min-height: 80px;
+            font-family: 'Fira Code', monospace;
+        }
+
+        input[type="file"] {
+            display: none;
+        }
+
+        .file-label {
+            display: inline-block;
+            padding: 10px 15px;
+            background-color: #0e639c;
+            color: white;
+            border-radius: 4px;
+            cursor: pointer;
+            text-align: center;
+        }
+
+        .file-label:hover {
+            background-color: #1177bb;
+        }
+        
+        #fileName {
+            font-style: italic;
+            color: #888;
+            margin-top: 5px;
+        }
+        
+        #asciiOutput {
+            font-family: inherit;
+            white-space: pre;
+            font-size: 10px;
+            line-height: 1.0;
+        }
+
+        #placeholder {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            height: 100%;
+            color: #666;
+            font-size: 1.5em;
+        }
+
+    </style>
+</head>
+<body>
+
+    <div class="container">
+        <div class="controls">
+            <h1>ASCII Art Generator</h1>
+            <div class="control-group">
+                <label for="imageLoader" class="file-label">1. Choose a PNG Image</label>
+                <input type="file" id="imageLoader" name="imageLoader" accept="image/png"/>
+                <span id="fileName">No file selected.</span>
+            </div>
+            
+            <div class="control-group">
+                <label for="outputWidth">2. Output Width (characters)</label>
+                <input type="number" id="outputWidth" value="100" min="10" max="500">
+            </div>
+
+            <div class="control-group">
+                <label for="aspectRatio">3. Aspect Ratio Correction</label>
+                <input type="range" id="aspectRatio" min="0.1" max="1.0" step="0.05" value="0.5">
+            </div>
+
+            <div class="control-group">
+                <label for="themeSelector">4. Theme</label>
+                <select id="themeSelector"></select>
+            </div>
+
+            <div class="control-group">
+                <label for="fontSelector">5. Font</label>
+                <select id="fontSelector"></select>
+            </div>
+
+            <div class="control-group">
+                <label for="useOnceToggle">
+                    <input type="checkbox" id="useOnceToggle" style="vertical-align: middle;">
+                    <span style="vertical-align: middle;">Use Code Once</span>
+                </label>
+            </div>
+
+            <div class="control-group">
+                <label for="codeInput">6. Code to Use</label>
+                <textarea id="codeInput" rows="10">#include <iostream>
+
+int main() {
+    std::cout << "Hello, ASCII Art!" << std::endl;
+    return 0;
+}</textarea>
+            </div>
+            
+            <h2>Instructions</h2>
+            <p>Use a PNG image with a <strong>transparent background</strong> for the best effect. The script will fill any non-transparent part of the image with characters from the code you provide.</p>
+        </div>
+        <div class="output-container">
+            <div class="image-preview">
+                <img id="previewImage" src="" alt="Original Image Preview">
+            </div>
+            <div class="output">
+                <pre><code id="asciiOutput" class="language-cpp"><div id="placeholder">Your ASCII art will appear here...</div></code></pre>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.11.1/highlight.min.js"></script>
+    <script>
+        const imageLoader = document.getElementById('imageLoader');
+        const outputWidthInput = document.getElementById('outputWidth');
+        const codeInput = document.getElementById('codeInput');
+        const aspectRatioInput = document.getElementById('aspectRatio');
+        const themeSelector = document.getElementById('themeSelector');
+        const useOnceToggle = document.getElementById('useOnceToggle');
+        const fontSelector = document.getElementById('fontSelector');
+        const asciiOutput = document.getElementById('asciiOutput');
+        const fileNameSpan = document.getElementById('fileName');
+        const placeholder = document.getElementById('placeholder');
+        const previewImage = document.getElementById('previewImage');
+        
+        let currentImage = null;
+
+        // --- Font Handling ---
+        const fonts = [
+            "Fira Code", "Source Code Pro", "Roboto Mono", "Space Mono", "JetBrains Mono", 
+            "IBM Plex Mono", "Ubuntu Mono", "Inconsolata", "Nanum Gothic Coding", "Overpass Mono", "DM Mono", "Courier Prime"
+        ];
+        const fontLink = document.getElementById('font-link');
+
+        fonts.forEach(font => {
+            const option = document.createElement('option');
+            option.value = font;
+            option.textContent = font;
+            fontSelector.appendChild(option);
+        });
+
+        function updateFont(fontName) {
+            const fontUrl = `https://fonts.googleapis.com/css2?family=${fontName.replace(/ /g, '+')}&display=swap`;
+            fontLink.href = fontUrl;
+            document.body.style.fontFamily = `'${fontName}', monospace`;
+            localStorage.setItem('asciiArtFont', fontName);
+        }
+
+        fontSelector.addEventListener('change', (e) => updateFont(e.target.value));
+
+        // --- Theme Handling ---
+        const themes = [
+            "1c-light", "a11y-dark", "a11y-light", "agate", "an-old-hope", "androidstudio", "arduino-light", "arta", "ascetic", 
+            "atom-one-dark-reasonable", "atom-one-dark", "atom-one-light", "base16-3024", "base16-apathy", "base16-apprentice", 
+            "base16-ashes", "base16-atelier-cave-light", "base16-atelier-cave", "base16-atelier-dune-light", "base16-atelier-dune", 
+            "base16-atelier-estuary-light", "base16-atelier-estuary", "base16-atelier-forest-light", "base16-atelier-forest", 
+            "base16-atelier-heath-light", "base16-atelier-heath", "base16-atelier-lakeside-light", "base16-atelier-lakeside", 
+            "base16-atelier-plateau-light", "base16-atelier-plateau", "base16-atelier-savanna-light", "base16-atelier-savanna", 
+            "base16-atelier-seaside-light", "base16-atelier-seaside", "base16-atelier-sulphurpool-light", "base16-atelier-sulphurpool", 
+            "base16-atlas", "base16-bespin", "base16-black-metal-bathory", "base16-black-metal-burzum", "base16-black-metal-dark-funeral", 
+            "base16-black-metal-gorgoroth", "base16-black-metal-immortal", "base16-black-metal-khold", "base16-black-metal-marduk", 
+            "base16-black-metal-mayhem", "base16-black-metal-nile", "base16-black-metal-venom", "base16-black-metal", "base16-brewer", 
+            "base16-bright", "base16-brogrammer", "base16-brush-trees-dark", "base16-brush-trees", "base16-chalk", "base16-circus", 
+            "base16-classic-dark", "base16-classic-light", "base16-codeschool", "base16-colors", "base16-cupcake", "base16-cupertino", 
+            "base16-danqing", "base16-darcula", "base16-dark-violet", "base16-darkmoss", "base16-darktooth", "base16-decaf", 
+            "base16-default-dark", "base16-default-light", "base16-dirtysea", "base16-dracula", "base16-edge-dark", "base16-edge-light", 
+            "base16-eighties", "base16-embers", "base16-equilibrium-dark", "base16-equilibrium-gray-dark", "base16-equilibrium-gray-light", 
+            "base16-equilibrium-light", "base16-espresso", "base16-eva-dim", "base16-eva", "base16-flat", "base16-framer", "base16-fruit-soda", 
+            "base16-gigavolt", "base16-github", "base16-google-dark", "base16-google-light", "base16-grayscale-dark", "base16-grayscale-light", 
+            "base16-green-screen", "base16-gruvbox-dark-hard", "base16-gruvbox-dark-medium", "base16-gruvbox-dark-pale", "base16-gruvbox-dark-soft", 
+            "base16-gruvbox-light-hard", "base16-gruvbox-light-medium", "base16-gruvbox-light-soft", "base16-hardcore", "base16-harmonic16-dark", 
+            "base16-harmonic16-light", "base16-heetch-dark", "base16-heetch-light", "base16-helios", "base16-hopscotch", "base16-horizon-dark", 
+            "base16-horizon-light", "base16-humanoid-dark", "base16-humanoid-light", "base16-ia-dark", "base16-ia-light", "base16-icy-dark", 
+            "base16-ir-black", "base16-isotope", "base16-kimber", "base16-london-tube", "base16-macintosh", "base16-marrakesh", "base16-materia", 
+            "base16-material-darker", "base16-material-lighter", "base16-material-palenight", "base16-material-vivid", "base16-material", 
+            "base16-mellow-purple", "base16-mexico-light", "base16-mocha", "base16-monokai", "base16-nebula", "base16-nord", "base16-nova", 
+            "base16-ocean", "base16-oceanicnext", "base16-one-light", "base16-onedark", "base16-outrun-dark", "base16-papercolor-dark", 
+            "base16-papercolor-light", "base16-paraiso", "base16-pasque", "base16-phd", "base16-pico", "base16-pop", "base16-porple", 
+            "base16-qualia", "base16-railscasts", "base16-rebecca", "base16-ros-pine-dawn", "base16-ros-pine-moon", "base16-ros-pine", 
+            "base16-sagelight", "base16-sandcastle", "base16-seti-ui", "base16-shapeshifter", "base16-silk-dark", "base16-silk-light", 
+            "base16-snazzy", "base16-solar-flare-light", "base16-solar-flare", "base16-solarized-dark", "base16-solarized-light", 
+            "base16-spacemacs", "base16-summercamp", "base16-summerfruit-dark", "base16-summerfruit-light", "base16-synth-midnight-terminal-dark", 
+            "base16-synth-midnight-terminal-light", "base16-tango", "base16-tender", "base16-tomorrow-night", "base16-tomorrow", "base16-twilight", 
+            "base16-unikitty-dark", "base16-unikitty-light", "base16-vulcan", "base16-windows-10-light", "base16-windows-10", 
+            "base16-windows-95-light", "base16-windows-95", "base16-windows-high-contrast-light", "base16-windows-high-contrast", 
+            "base16-windows-nt-light", "base16-windows-nt", "base16-woodland", "base16-xcode-dusk", "base16-zenburn", "brown-paper", 
+            "codepen-embed", "color-brewer", "cybertopia-cherry", "cybertopia-dimmer", "cybertopia-icecap", "cybertopia-saturated", 
+            "dark", "default", "devibeans", "docco", "far", "felipec", "foundation", "github-dark-dimmed", "github-dark", "github", 
+            "gml", "googlecode", "gradient-dark", "gradient-light", "grayscale", "hybrid", "idea", "intellij-light", "ir-black", 
+            "isbl-editor-dark", "isbl-editor-light", "kimbie-dark", "kimbie-light", "lightfair", "lioshi", "magula", "mono-blue", 
+            "monokai-sublime", "monokai", "night-owl", "nnfx-dark", "nnfx-light", "nord", "obsidian", "panda-syntax-dark", 
+            "panda-syntax-light", "paraiso-dark", "paraiso-light", "pojoaque", "purebasic", "qtcreator-dark", "qtcreator-light", 
+            "rainbow", "rose-pine-dawn", "rose-pine-moon", "rose-pine", "routeros", "school-book", "shades-of-purple", "srcery", 
+            "stackoverflow-dark", "stackoverflow-light", "sunburst", "tokyo-night-dark", "tokyo-night-light", "tomorrow-night-blue", 
+            "tomorrow-night-bright", "vs", "vs2015", "xcode", "xt256"
+        ];
+        const themeLink = document.getElementById('hljs-theme');
+        const outputPanel = document.querySelector('.output');
+
+        themes.forEach(theme => {
+            const option = document.createElement('option');
+            option.value = theme;
+            option.textContent = theme.replace(/-/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
+            themeSelector.appendChild(option);
+        });
+
+        function updateTheme(themeName) {
+            const themeUrl = `https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.11.1/styles/${themeName}.min.css`;
+            themeLink.href = themeUrl;
+            localStorage.setItem('asciiArtTheme', themeName);
+
+            // Dynamically update background color
+            setTimeout(() => {
+                const temp = document.createElement('div');
+                temp.style.position = 'absolute';
+                temp.style.left = '-9999px';
+                temp.className = 'hljs';
+                document.body.appendChild(temp);
+                const bgColor = getComputedStyle(temp).backgroundColor;
+                outputPanel.style.backgroundColor = bgColor;
+                document.body.removeChild(temp);
+            }, 100); // Delay to allow theme to load
+        }
+
+        themeSelector.addEventListener('change', (e) => updateTheme(e.target.value));
+
+        // --- Event Listeners ---
+        imageLoader.addEventListener('change', handleImage, false);
+        outputWidthInput.addEventListener('input', () => processImage());
+        codeInput.addEventListener('input', () => processImage());
+        aspectRatioInput.addEventListener('input', () => processImage());
+        useOnceToggle.addEventListener('change', () => processImage());
+
+        // --- Load settings from localStorage on startup ---
+        document.addEventListener('DOMContentLoaded', () => {
+            const savedCode = localStorage.getItem('asciiArtCode');
+            const savedWidth = localStorage.getItem('asciiArtWidth');
+            const savedAspectRatio = localStorage.getItem('asciiArtAspectRatio');
+            const savedTheme = localStorage.getItem('asciiArtTheme') || 'atom-one-dark';
+            const useOnce = localStorage.getItem('asciiArtUseOnce') === 'true';
+            const savedFont = localStorage.getItem('asciiArtFont') || 'Fira Code';
+
+            if (savedCode) {
+                codeInput.value = savedCode;
+            }
+            if (savedWidth) {
+                outputWidthInput.value = savedWidth;
+            }
+            if (savedAspectRatio) {
+                aspectRatioInput.value = savedAspectRatio;
+            }
+            
+            themeSelector.value = savedTheme;
+            updateTheme(savedTheme);
+            useOnceToggle.checked = useOnce;
+            fontSelector.value = savedFont;
+            updateFont(savedFont);
+        });
+
+        function handleImage(e) {
+            if (!e.target.files || !e.target.files[0]) return;
+            
+            const reader = new FileReader();
+            reader.onload = function(event) {
+                const img = new Image();
+                img.onload = function() {
+                    currentImage = img;
+                    fileNameSpan.textContent = e.target.files[0].name;
+                    previewImage.src = event.target.result;
+                    processImage();
+                }
+                img.src = event.target.result;
+            }
+            reader.readAsDataURL(e.target.files[0]);
+        }
+
+        function processImage() {
+            if (!currentImage) {
+                if (placeholder) placeholder.innerHTML = "Please select an image first.";
+                return;
+            };
+            
+            if (placeholder) {
+                placeholder.style.display = 'none';
+            }
+
+            // 1. Get configuration
+            const targetWidth = parseInt(outputWidthInput.value, 10);
+            const code = codeInput.value;
+            const aspectRatio = parseFloat(aspectRatioInput.value);
+            const useOnce = useOnceToggle.checked;
+            
+            // Save settings to localStorage
+            localStorage.setItem('asciiArtCode', code);
+            localStorage.setItem('asciiArtWidth', targetWidth.toString());
+            localStorage.setItem('asciiArtAspectRatio', aspectRatio.toString());
+            localStorage.setItem('asciiArtUseOnce', useOnce.toString());
+
+            const characters = code.replace(/\s/g, ''); // Minify code to create character set
+
+            if (isNaN(targetWidth) || targetWidth <= 0 || characters.length === 0) {
+                asciiOutput.textContent = 'Invalid width or empty code input.';
+                return;
+            }
+
+            // 2. Calculate new dimensions
+            const imageAspectRatio = currentImage.height / currentImage.width;
+            const targetHeight = Math.round(targetWidth * imageAspectRatio * aspectRatio); 
+
+            // 3. Use a canvas to read pixel data
+            const canvas = document.createElement('canvas');
+            canvas.width = targetWidth;
+            canvas.height = targetHeight;
+            const ctx = canvas.getContext('2d');
+            ctx.drawImage(currentImage, 0, 0, targetWidth, targetHeight);
+            const imageData = ctx.getImageData(0, 0, targetWidth, targetHeight).data;
+
+            // 4. Build the ASCII string
+            let asciiString = '';
+            let charIndex = 0;
+            for (let y = 0; y < targetHeight; y++) {
+                for (let x = 0; x < targetWidth; x++) {
+                    const index = (y * targetWidth + x) * 4;
+                    const alpha = imageData[index + 3];
+
+                    if (alpha > 0) {
+                        if (useOnce) {
+                            asciiString += charIndex < characters.length ? characters[charIndex] : ' ';
+                        } else {
+                            asciiString += characters[charIndex % characters.length];
+                        }
+                        charIndex++;
+                    } else {
+                        asciiString += ' ';
+                    }
+                }
+                asciiString += '\n';
+            }
+
+            // 5. Display and highlight the result
+            const highlightedCode = hljs.highlight(asciiString, { language: 'cpp' }).value;
+            asciiOutput.innerHTML = highlightedCode;
+        }
+    </script>
+</body>
+</html>
