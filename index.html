@@ -126,6 +126,24 @@
             line-height: 1.0;
         }
 
+        #paletteContainer {
+            display: flex;
+            flex-direction: column;
+            gap: 5px;
+        }
+
+        .palette-item {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .color-box {
+            width: 20px;
+            height: 20px;
+            border: 1px solid #555;
+        }
+
         #placeholder {
             display: flex;
             align-items: center;
@@ -169,6 +187,25 @@
             </div>
 
             <div class="control-group">
+                <label for="quantizeToggle">
+                    <input type="checkbox" id="quantizeToggle" style="vertical-align: middle;">
+                    <span style="vertical-align: middle;">Quantize Image</span>
+                </label>
+            </div>
+
+            <div id="quantizationControls">
+                <div class="control-group">
+                    <label for="quantizeCount">6. Number of Colors</label>
+                    <input type="number" id="quantizeCount" value="8" min="2" max="32">
+                </div>
+
+                <div id="colorPalette" class="control-group">
+                    <label>7. Color Layers & Shadows</label>
+                    <div id="paletteContainer"></div>
+                </div>
+            </div>
+
+            <div class="control-group">
                 <label for="useOnceToggle">
                     <input type="checkbox" id="useOnceToggle" style="vertical-align: middle;">
                     <span style="vertical-align: middle;">Use Code Once</span>
@@ -176,7 +213,7 @@
             </div>
 
             <div class="control-group">
-                <label for="codeInput">6. Code to Use</label>
+                <label for="codeInput">8. Code to Use</label>
                 <textarea id="codeInput" rows="10">#include <iostream>
 
 int main() {
@@ -207,6 +244,10 @@ int main() {
         const themeSelector = document.getElementById('themeSelector');
         const useOnceToggle = document.getElementById('useOnceToggle');
         const fontSelector = document.getElementById('fontSelector');
+        const quantizeToggle = document.getElementById('quantizeToggle');
+        const quantizeCountInput = document.getElementById('quantizeCount');
+        const paletteContainer = document.getElementById('paletteContainer');
+        const quantizationControls = document.getElementById('quantizationControls');
         const asciiOutput = document.getElementById('asciiOutput');
         const fileNameSpan = document.getElementById('fileName');
         const placeholder = document.getElementById('placeholder');
@@ -319,6 +360,17 @@ int main() {
         codeInput.addEventListener('input', () => processImage());
         aspectRatioInput.addEventListener('input', () => processImage());
         useOnceToggle.addEventListener('change', () => processImage());
+        quantizeToggle.addEventListener('change', () => {
+            toggleQuantizationUI();
+            processImage();
+        });
+        quantizeCountInput.addEventListener('input', () => processImage());
+
+        function toggleQuantizationUI() {
+            quantizationControls.style.display = quantizeToggle.checked ? 'flex' : 'none';
+            quantizationControls.style.flexDirection = 'column';
+            quantizationControls.style.gap = '20px';
+        }
 
         // --- Load settings from localStorage on startup ---
         document.addEventListener('DOMContentLoaded', () => {
@@ -328,6 +380,9 @@ int main() {
             const savedTheme = localStorage.getItem('asciiArtTheme') || 'atom-one-dark';
             const useOnce = localStorage.getItem('asciiArtUseOnce') === 'true';
             const savedFont = localStorage.getItem('asciiArtFont') || 'Fira Code';
+            const savedQuantize = localStorage.getItem('asciiArtQuantize') === 'true';
+            const savedQuantizeCount = localStorage.getItem('asciiArtQuantizeCount') || 8;
+            const savedImage = localStorage.getItem('asciiArtImage');
 
             if (savedCode) {
                 codeInput.value = savedCode;
@@ -344,7 +399,22 @@ int main() {
             useOnceToggle.checked = useOnce;
             fontSelector.value = savedFont;
             updateFont(savedFont);
+            quantizeToggle.checked = savedQuantize;
+            quantizeCountInput.value = savedQuantizeCount;
+            toggleQuantizationUI();
+
+            if (savedImage) {
+                const img = new Image();
+                img.onload = function() {
+                    currentImage = img;
+                    previewImage.src = savedImage;
+                    quantizeAndProcess();
+                };
+                img.src = savedImage;
+            }
         });
+
+        let dominantColors = [];
 
         function handleImage(e) {
             if (!e.target.files || !e.target.files[0]) return;
@@ -356,11 +426,109 @@ int main() {
                     currentImage = img;
                     fileNameSpan.textContent = e.target.files[0].name;
                     previewImage.src = event.target.result;
-                    processImage();
+                    localStorage.setItem('asciiArtImage', event.target.result);
+                    quantizeAndProcess();
                 }
                 img.src = event.target.result;
             }
             reader.readAsDataURL(e.target.files[0]);
+        }
+
+        function quantizeAndProcess() {
+            if (!currentImage) return;
+
+            const targetWidth = parseInt(outputWidthInput.value, 10);
+            const imageAspectRatio = currentImage.height / currentImage.width;
+            const aspectRatio = parseFloat(aspectRatioInput.value);
+            const targetHeight = Math.round(targetWidth * imageAspectRatio * aspectRatio);
+            const quantizeCount = parseInt(quantizeCountInput.value, 10);
+
+            const canvas = document.createElement('canvas');
+            canvas.width = targetWidth;
+            canvas.height = targetHeight;
+            const ctx = canvas.getContext('2d');
+            ctx.drawImage(currentImage, 0, 0, targetWidth, targetHeight);
+            const imageData = ctx.getImageData(0, 0, targetWidth, targetHeight);
+
+            dominantColors = getQuantizedColors(imageData, quantizeCount);
+            updateColorPaletteUI(dominantColors);
+            processImage();
+        }
+        
+        quantizeCountInput.addEventListener('input', () => quantizeAndProcess());
+        
+        function getQuantizedColors(imageData, count) {
+            const pixels = imageData.data;
+            const colorCounts = {};
+
+            // Build a histogram of colors, reducing color depth to group similar colors
+            for (let i = 0; i < pixels.length; i += 4) {
+                const r = pixels[i] >> 4;
+                const g = pixels[i + 1] >> 4;
+                const b = pixels[i + 2] >> 4;
+                const a = pixels[i + 3];
+
+                if (a > 128) { // Only consider non-transparent pixels
+                    const key = `${r},${g},${b}`;
+                    colorCounts[key] = (colorCounts[key] || 0) + 1;
+                }
+            }
+
+            // Sort colors by frequency
+            const sortedColors = Object.keys(colorCounts).sort((a, b) => colorCounts[b] - colorCounts[a]);
+            
+            // Get the top 'count' colors
+            const topColors = sortedColors.slice(0, count).map(key => {
+                const [r, g, b] = key.split(',').map(c => parseInt(c, 10) << 4);
+                return { r, g, b };
+            });
+
+            return topColors;
+        }
+
+        function updateColorPaletteUI(colors) {
+            paletteContainer.innerHTML = '';
+            colors.forEach((color, index) => {
+                const { r, g, b } = color;
+                const item = document.createElement('div');
+                item.className = 'palette-item';
+                
+                const colorBox = document.createElement('div');
+                colorBox.className = 'color-box';
+                colorBox.style.backgroundColor = `rgb(${r}, ${g}, ${b})`;
+
+                const checkbox = document.createElement('input');
+                checkbox.type = 'checkbox';
+                checkbox.id = `shadow-${index}`;
+                checkbox.dataset.color = JSON.stringify(color);
+                checkbox.addEventListener('change', () => processImage());
+
+                const label = document.createElement('label');
+                label.htmlFor = `shadow-${index}`;
+                label.textContent = `Shadow for rgb(${r}, ${g}, ${b})`;
+
+                item.appendChild(colorBox);
+                item.appendChild(checkbox);
+                item.appendChild(label);
+                paletteContainer.appendChild(item);
+            });
+        }
+
+        function findClosestColor(color, palette) {
+            let minDistance = Infinity;
+            let closestColor = null;
+            for (const pColor of palette) {
+                const distance = Math.sqrt(
+                    Math.pow(color.r - pColor.r, 2) +
+                    Math.pow(color.g - pColor.g, 2) +
+                    Math.pow(color.b - pColor.b, 2)
+                );
+                if (distance < minDistance) {
+                    minDistance = distance;
+                    closestColor = pColor;
+                }
+            }
+            return closestColor;
         }
 
         function processImage() {
@@ -373,60 +541,133 @@ int main() {
                 placeholder.style.display = 'none';
             }
 
-            // 1. Get configuration
+            // --- Main Processing Logic ---
             const targetWidth = parseInt(outputWidthInput.value, 10);
             const code = codeInput.value;
             const aspectRatio = parseFloat(aspectRatioInput.value);
             const useOnce = useOnceToggle.checked;
+            const useQuantization = quantizeToggle.checked;
+            const quantizeCount = parseInt(quantizeCountInput.value, 10);
             
-            // Save settings to localStorage
+            // Save settings
             localStorage.setItem('asciiArtCode', code);
             localStorage.setItem('asciiArtWidth', targetWidth.toString());
             localStorage.setItem('asciiArtAspectRatio', aspectRatio.toString());
             localStorage.setItem('asciiArtUseOnce', useOnce.toString());
+            localStorage.setItem('asciiArtQuantize', useQuantization.toString());
+            localStorage.setItem('asciiArtQuantizeCount', quantizeCount.toString());
 
-            const characters = code.replace(/\s/g, ''); // Minify code to create character set
+            const characters = code.replace(/\s/g, '');
 
             if (isNaN(targetWidth) || targetWidth <= 0 || characters.length === 0) {
                 asciiOutput.textContent = 'Invalid width or empty code input.';
                 return;
             }
 
-            // 2. Calculate new dimensions
             const imageAspectRatio = currentImage.height / currentImage.width;
             const targetHeight = Math.round(targetWidth * imageAspectRatio * aspectRatio); 
 
-            // 3. Use a canvas to read pixel data
             const canvas = document.createElement('canvas');
             canvas.width = targetWidth;
             canvas.height = targetHeight;
             const ctx = canvas.getContext('2d');
             ctx.drawImage(currentImage, 0, 0, targetWidth, targetHeight);
-            const imageData = ctx.getImageData(0, 0, targetWidth, targetHeight).data;
+            const originalImageData = ctx.getImageData(0, 0, targetWidth, targetHeight);
 
-            // 4. Build the ASCII string
             let asciiString = '';
-            let charIndex = 0;
-            for (let y = 0; y < targetHeight; y++) {
-                for (let x = 0; x < targetWidth; x++) {
-                    const index = (y * targetWidth + x) * 4;
-                    const alpha = imageData[index + 3];
 
-                    if (alpha > 0) {
-                        if (useOnce) {
-                            asciiString += charIndex < characters.length ? characters[charIndex] : ' ';
-                        } else {
-                            asciiString += characters[charIndex % characters.length];
-                        }
-                        charIndex++;
-                    } else {
-                        asciiString += ' ';
+            if (useQuantization) {
+                // --- Quantization Path ---
+                const quantizedData = new Uint8ClampedArray(originalImageData.data);
+                for (let i = 0; i < originalImageData.data.length; i += 4) {
+                    if (originalImageData.data[i + 3] > 128) {
+                        const originalColor = { r: originalImageData.data[i], g: originalImageData.data[i + 1], b: originalImageData.data[i + 2] };
+                        const closest = findClosestColor(originalColor, dominantColors);
+                        quantizedData[i] = closest.r;
+                        quantizedData[i + 1] = closest.g;
+                        quantizedData[i + 2] = closest.b;
                     }
                 }
-                asciiString += '\n';
+                
+                const quantizedImageData = new ImageData(quantizedData, targetWidth, targetHeight);
+                const previewCanvas = document.createElement('canvas');
+                previewCanvas.width = targetWidth;
+                previewCanvas.height = targetHeight;
+                previewCanvas.getContext('2d').putImageData(quantizedImageData, 0, 0);
+                previewImage.src = previewCanvas.toDataURL();
+                previewImage.style.width = '100%';
+                previewImage.style.height = '100%';
+                previewImage.style.objectFit = 'contain';
+
+                const shadowColors = [];
+                paletteContainer.querySelectorAll('input[type="checkbox"]:checked').forEach(cb => {
+                    shadowColors.push(JSON.parse(cb.dataset.color));
+                });
+
+                let asciiGrid = Array(targetHeight).fill(null).map(() => Array(targetWidth).fill(' '));
+                let charIndex = 0;
+
+                for (let y = 0; y < targetHeight; y++) {
+                    for (let x = 0; x < targetWidth; x++) {
+                        const index = (y * targetWidth + x) * 4;
+                        const alpha = quantizedData[index + 3];
+
+                        if (alpha > 128) {
+                            if (useOnce) {
+                                asciiGrid[y][x] = charIndex < characters.length ? characters[charIndex] : ' ';
+                            } else {
+                                asciiGrid[y][x] = characters[charIndex % characters.length];
+                            }
+                            charIndex++;
+
+                            const pixelColor = { r: quantizedData[index], g: quantizedData[index + 1], b: quantizedData[index + 2] };
+                            const shouldShadow = shadowColors.some(sc => sc.r === pixelColor.r && sc.g === pixelColor.g && sc.b === pixelColor.b);
+
+                            if (shouldShadow && y + 1 < targetHeight && x + 1 < targetWidth) {
+                                const neighborIndex = ((y + 1) * targetWidth + (x + 1)) * 4;
+                                const neighborAlpha = quantizedData[neighborIndex + 3];
+                                if (neighborAlpha < 128) {
+                                    asciiGrid[y + 1][x + 1] = ' ';
+                                } else {
+                                    const neighborColor = { r: quantizedData[neighborIndex], g: quantizedData[neighborIndex + 1], b: quantizedData[neighborIndex + 2] };
+                                    const isNeighborShadowed = shadowColors.some(sc => sc.r === neighborColor.r && sc.g === neighborColor.g && sc.b === neighborColor.b);
+                                    if (!isNeighborShadowed) {
+                                        asciiGrid[y + 1][x + 1] = ' ';
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+                asciiString = asciiGrid.map(row => row.join('')).join('\n');
+
+            } else {
+                // --- Original Path ---
+                previewImage.src = currentImage.src;
+                paletteContainer.innerHTML = '';
+                let charIndex = 0;
+                let grid = [];
+                for (let i = 0; i < targetHeight; i++) {
+                    grid.push([]);
+                    for (let j = 0; j < targetWidth; j++) {
+                        const index = (i * targetWidth + j) * 4;
+                        const alpha = originalImageData.data[index + 3];
+                        if (alpha > 128) {
+                            if (useOnce) {
+                                grid[i].push(charIndex < characters.length ? characters[charIndex] : ' ');
+                            } else {
+                                grid[i].push(characters[charIndex % characters.length]);
+                            }
+                            charIndex++;
+                        } else {
+                            grid[i].push(' ');
+                        }
+                    }
+                }
+                asciiString = grid.map(row => row.join('')).join('\n');
             }
 
-            // 5. Display and highlight the result
+            // 5. Display and highlight
             const highlightedCode = hljs.highlight(asciiString, { language: 'cpp' }).value;
             asciiOutput.innerHTML = highlightedCode;
         }
